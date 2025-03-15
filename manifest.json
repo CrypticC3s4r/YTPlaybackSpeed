@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "Playback Speed Controller",
+  "version": "1.0",
+  "description": "Adjust playback speed up to 16x with Shift + . / , and double speed with mouse/space hold",
+  "permissions": ["storage", "activeTab"],
+  "content_scripts": [
+    {
+      "matches": ["*://*.youtube.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_end"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  }
+}
