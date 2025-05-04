@@ -78,8 +78,16 @@ function enableDoubleSpeed() {
 function disableDoubleSpeed() {
     if (isDoubleSpeed) {
         isDoubleSpeed = false;
-        setPlaybackRate(baseSpeed, false);
-        console.log("Double speed disabled, restored to: " + baseSpeed);
+        // If playback speed with Space down is 3x or more, set to 1.5x. Otherwise, restore baseSpeed.
+        const currentSpeed = baseSpeed * 2;
+        if (currentSpeed >= 3) {
+            baseSpeed = 1.5;
+            setPlaybackRate(1.5, false);
+            console.log("Double speed disabled (was >=3x), set to 1.5x");
+        } else {
+            setPlaybackRate(baseSpeed, false);
+            console.log("Double speed disabled, restored to: " + baseSpeed);
+        }
     }
 }
 
@@ -128,29 +136,35 @@ function attachVideoMouseEvents() {
     const video = document.querySelector("video");
     if (video && !video.hasMouseEvents) {
         console.log("Attaching mouse events to video element");
-        
+        // Prevent overlay (speedOverlay) from interfering with mouse events on the video
+        if (speedOverlay) {
+            speedOverlay.style.pointerEvents = "none";
+        }
+
         video.addEventListener("mousedown", (event) => {
-            // Check if it's the left mouse button (button 0)
-            if (event.button === 0) {
+            // Ignore events if mouse is over the overlay
+            if (event.button === 0 && !(event.target.id === "speed-overlay")) {
                 console.log("Mouse down on video");
                 enableDoubleSpeed();
             }
         });
         
         video.addEventListener("mouseup", (event) => {
-            // Check if it's the left mouse button (button 0)
-            if (event.button === 0) {
+            if (event.button === 0 && !(event.target.id === "speed-overlay")) {
                 console.log("Mouse up on video");
                 disableDoubleSpeed();
             }
         });
-        
+
         // Handle mouse leaving the video while button is pressed
-        video.addEventListener("mouseleave", () => {
-            console.log("Mouse left video");
-            disableDoubleSpeed();
+        video.addEventListener("mouseleave", (event) => {
+            // Only trigger if not leaving to the overlay
+            if (!(event.relatedTarget && event.relatedTarget.id === "speed-overlay")) {
+                console.log("Mouse left video");
+                disableDoubleSpeed();
+            }
         });
-        
+
         video.hasMouseEvents = true;
     }
 }
@@ -176,6 +190,19 @@ document.addEventListener("keydown", (event) => {
             setPlaybackRate(baseSpeed * 2, false);
         } else {
             setPlaybackRate(baseSpeed);
+        }
+    }
+    // Handle Shift + [1-9] for quick set speeds
+    else if (event.shiftKey && event.code.startsWith("Digit")) {
+        const digit = parseInt(event.code.replace("Digit", ""), 10);
+        if (digit >= 1 && digit <= 9) {
+            baseSpeed = digit;
+            console.log(`Shift+${digit} pressed: Setting speed to ${digit}x`);
+            if (isDoubleSpeed) {
+                setPlaybackRate(baseSpeed * 2, false);
+            } else {
+                setPlaybackRate(baseSpeed);
+            }
         }
     }
     // Handle space key for double speed
