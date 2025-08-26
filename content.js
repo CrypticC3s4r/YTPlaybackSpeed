@@ -12,17 +12,56 @@ let startX = 0;
 let startY = 0;
 let currentSpeed = 1;
 let lastDirectionChange = 0; // Track last speed change time for comfortable spacing
+let lastSeekTime = 0; // Track last seek time for comfortable spacing
 
-// Function to handle mouse movement and speed changes
+// Function to handle video seeking based on vertical mouse movement
+function handleVideoSeeking(deltaY, currentTime) {
+    const video = document.querySelector("video");
+    if (!video) return;
+
+    // Define comfortable movement threshold (pixels per seek step)
+    const seekThreshold = 60; // Pixels of vertical movement for one seek step
+    const seekStep = 10; // Seconds to seek per step
+
+    // Calculate how many seek steps based on vertical movement
+    const seekSteps = Math.floor(Math.abs(deltaY) / seekThreshold);
+
+    if (seekSteps > 0 && (currentTime - lastSeekTime) > 200) { // 200ms delay between seeks
+        let newTime;
+        if (deltaY < 0) {
+            // Moving up - fast forward
+            newTime = Math.min(video.duration, video.currentTime + (seekSteps * seekStep));
+            console.log(`Seeking forward ${seekSteps * seekStep} seconds`);
+        } else {
+            // Moving down - fast backward
+            newTime = Math.max(0, video.currentTime - (seekSteps * seekStep));
+            console.log(`Seeking backward ${seekSteps * seekStep} seconds`);
+        }
+
+        video.currentTime = newTime;
+        lastSeekTime = currentTime;
+
+        // Show seeking overlay
+        showOverlay(deltaY < 0 ? `>> ${seekSteps * seekStep}s` : `<< ${seekSteps * seekStep}s`);
+    }
+}
+
+// Function to handle mouse movement for both speed control (horizontal) and seeking (vertical)
 function handleMouseMovement(event) {
     if (!isDragging) return;
 
     const currentX = event.clientX;
+    const currentY = event.clientY;
     const currentTime = Date.now();
 
-    // Calculate horizontal distance from anchor (start) position
+    // Calculate distances from anchor (start) position
     const deltaX = currentX - startX;
+    const deltaY = currentY - startY;
 
+    // Handle vertical movement for seeking
+    handleVideoSeeking(deltaY, currentTime);
+
+    // Handle horizontal movement for speed control
     // Define comfortable movement threshold (pixels per speed change)
     const movementThreshold = 40; // Half the distance for 0.5x steps
     const anchorThreshold = 20; // Threshold for returning to anchor/base speed
@@ -31,13 +70,13 @@ function handleMouseMovement(event) {
     const speedSteps = Math.floor(Math.abs(deltaX) / movementThreshold);
     const speedIncrement = speedSteps * 0.5;
 
-    // Check if cursor is near the anchor point (return to base speed)
+    // Check if cursor is near the horizontal anchor point (return to base speed)
     if (Math.abs(deltaX) < anchorThreshold) {
         if (currentSpeed !== baseSpeed && (currentTime - lastDirectionChange) > 150) {
             currentSpeed = baseSpeed;
             setPlaybackRate(currentSpeed, false);
             lastDirectionChange = currentTime;
-            console.log(`Returned to anchor point, speed: ${currentSpeed}x`);
+            console.log(`Returned to horizontal anchor point, speed: ${currentSpeed}x`);
         }
         return;
     }
@@ -58,7 +97,7 @@ function handleMouseMovement(event) {
             currentSpeed = newSpeed;
             setPlaybackRate(currentSpeed, false);
             lastDirectionChange = currentTime;
-            console.log(`Mouse movement from anchor - speed: ${currentSpeed}x`);
+            console.log(`Horizontal movement from anchor - speed: ${currentSpeed}x`);
         }
     }
 }
@@ -199,7 +238,7 @@ function attachVideoMouseEvents() {
                 startX = event.clientX;
                 startY = event.clientY;
                 currentSpeed = baseSpeed; // Always start from base speed as the anchor point
-                console.log(`Started dragging from anchor point at speed: ${currentSpeed}x`);
+                console.log(`Started dragging from anchor point at speed: ${currentSpeed}x (coordinates: ${startX}, ${startY})`);
             }
         });
         
