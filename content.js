@@ -6,6 +6,102 @@ let baseSpeed = 1;
 let isDoubleSpeed = false;
 let speedOverlay = null;
 
+// Variables for mouse movement tracking
+let isDragging = false;
+let startX = 0;
+let startY = 0;
+let currentSpeed = 1;
+let lastDirectionChange = 0; // Track last speed change time for comfortable spacing
+let lastSeekTime = 0; // Track last seek time for comfortable spacing
+
+// Function to handle video seeking based on vertical mouse movement
+function handleVideoSeeking(deltaY, currentTime) {
+    const video = document.querySelector("video");
+    if (!video) return;
+
+    // Define comfortable movement threshold (pixels per seek step)
+    const seekThreshold = 60; // Pixels of vertical movement for one seek step
+    const seekStep = 10; // Seconds to seek per step
+
+    // Calculate how many seek steps based on vertical movement
+    const seekSteps = Math.floor(Math.abs(deltaY) / seekThreshold);
+
+    if (seekSteps > 0 && (currentTime - lastSeekTime) > 200) { // 200ms delay between seeks
+        let newTime;
+        if (deltaY < 0) {
+            // Moving up - fast forward
+            newTime = Math.min(video.duration, video.currentTime + (seekSteps * seekStep));
+            console.log(`Seeking forward ${seekSteps * seekStep} seconds`);
+        } else {
+            // Moving down - fast backward
+            newTime = Math.max(0, video.currentTime - (seekSteps * seekStep));
+            console.log(`Seeking backward ${seekSteps * seekStep} seconds`);
+        }
+
+        video.currentTime = newTime;
+        lastSeekTime = currentTime;
+
+        // Show seeking overlay
+        showOverlay(deltaY < 0 ? `>> ${seekSteps * seekStep}s` : `<< ${seekSteps * seekStep}s`);
+    }
+}
+
+// Function to handle mouse movement for both speed control (horizontal) and seeking (vertical)
+function handleMouseMovement(event) {
+    if (!isDragging) return;
+
+    const currentX = event.clientX;
+    const currentY = event.clientY;
+    const currentTime = Date.now();
+
+    // Calculate distances from anchor (start) position
+    const deltaX = currentX - startX;
+    const deltaY = currentY - startY;
+
+    // Handle vertical movement for seeking
+    handleVideoSeeking(deltaY, currentTime);
+
+    // Handle horizontal movement for speed control
+    // Define comfortable movement threshold (pixels per speed change)
+    const movementThreshold = 40; // Half the distance for 0.5x steps
+    const anchorThreshold = 20; // Threshold for returning to anchor/base speed
+
+    // Calculate how many 0.5 speed steps based on movement from anchor
+    const speedSteps = Math.floor(Math.abs(deltaX) / movementThreshold);
+    const speedIncrement = speedSteps * 0.5;
+
+    // Check if cursor is near the horizontal anchor point (return to base speed)
+    if (Math.abs(deltaX) < anchorThreshold) {
+        if (currentSpeed !== baseSpeed && (currentTime - lastDirectionChange) > 150) {
+            currentSpeed = baseSpeed;
+            setPlaybackRate(currentSpeed, false);
+            lastDirectionChange = currentTime;
+            console.log(`Returned to horizontal anchor point, speed: ${currentSpeed}x`);
+        }
+        return;
+    }
+
+    if (speedIncrement > 0) {
+        // Determine direction and calculate new speed from base speed
+        let newSpeed;
+        if (deltaX > 0) {
+            // Moving right from anchor - increase speed in 0.5 increments
+            newSpeed = Math.max(0.5, baseSpeed + speedIncrement);
+        } else {
+            // Moving left from anchor - decrease speed in 0.5 increments
+            newSpeed = Math.max(0.5, baseSpeed - speedIncrement);
+        }
+
+        // Only update if speed actually changed and enough time has passed (for comfortable spacing)
+        if (newSpeed !== currentSpeed && (currentTime - lastDirectionChange) > 150) {
+            currentSpeed = newSpeed;
+            setPlaybackRate(currentSpeed, false);
+            lastDirectionChange = currentTime;
+            console.log(`Horizontal movement from anchor - speed: ${currentSpeed}x`);
+        }
+    }
+}
+
 // Function to create the overlay element if it doesn't exist
 function createOverlay() {
     if (!speedOverlay) {
@@ -42,22 +138,25 @@ function showOverlay(speed) {
 function setPlaybackRate(speed, updateBase = true) {
     const video = document.querySelector("video");
     if (video) {
-        video.playbackRate = speed;
-        console.log("Speed set to: " + speed);
-        showOverlay(speed);
-        
+        // Ensure speed is in 0.5 increments and at least 0.5
+        const validSpeed = Math.max(0.5, Math.round(speed * 2) / 2);
+        video.playbackRate = validSpeed;
+        console.log("Speed set to: " + validSpeed);
+        showOverlay(validSpeed);
+
         // Update currentDisplaySpeed in storage for popup
-        chrome.storage.sync.set({ currentDisplaySpeed: speed }, () => {
-            console.log("Current display speed saved: " + speed);
+        chrome.storage.sync.set({ currentDisplaySpeed: validSpeed }, () => {
+            console.log("Current display speed saved: " + validSpeed);
         });
-        
+
         // Only update baseSpeed and desiredSpeed if not temporarily changing speed
         if (updateBase) {
-            baseSpeed = speed;
-            desiredSpeed = speed;
+            baseSpeed = validSpeed;
+            desiredSpeed = validSpeed;
+            currentSpeed = validSpeed;
             // Save the base speed to storage
-            chrome.storage.sync.set({ speed: speed }, () => {
-                console.log("Base speed saved to storage: " + speed);
+            chrome.storage.sync.set({ speed: validSpeed }, () => {
+                console.log("Base speed saved to storage: " + validSpeed);
             });
         }
     } else {
@@ -65,22 +164,15 @@ function setPlaybackRate(speed, updateBase = true) {
     }
 }
 
-// Function to double the speed temporarily
+// Functions for compatibility (keeping for any other references)
 function enableDoubleSpeed() {
-    if (!isDoubleSpeed) {
-        isDoubleSpeed = true;
-        setPlaybackRate(baseSpeed * 2, false);
-        console.log("Double speed enabled, base speed: " + baseSpeed);
-    }
+    // Mouse movement now handles speed changes, keeping for compatibility
+    console.log("Double speed function called (legacy compatibility)");
 }
 
-// Function to restore normal speed
 function disableDoubleSpeed() {
-    if (isDoubleSpeed) {
-        isDoubleSpeed = false;
-        setPlaybackRate(baseSpeed, false);
-        console.log("Double speed disabled, restored to: " + baseSpeed);
-    }
+    // Mouse movement now handles speed changes, keeping for compatibility
+    console.log("Disable double speed function called (legacy compatibility)");
 }
 
 // Attach a ratechange listener to the video element to update the overlay
@@ -98,7 +190,10 @@ function attachRateChangeListener() {
 // Apply saved speed on page load with logging
 chrome.storage.sync.get("speed", (data) => {
     baseSpeed = data.speed || 1;
+    // Ensure baseSpeed is at least 0.5 and in 0.5 increments
+    baseSpeed = Math.max(0.5, Math.round(baseSpeed * 2) / 2);
     desiredSpeed = baseSpeed;
+    currentSpeed = baseSpeed;
     setPlaybackRate(baseSpeed);
     console.log("Initial speed from storage: " + baseSpeed);
     attachRateChangeListener();
@@ -115,8 +210,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         } else {
             chrome.storage.sync.get("speed", (data) => {
                 const storedSpeed = data.speed || 1;
-                console.log("Sending stored speed to popup: " + storedSpeed);
-                sendResponse({ speed: storedSpeed });
+                // Ensure stored speed is in proper 0.5 increments
+                const validStoredSpeed = Math.max(0.5, Math.round(storedSpeed * 2) / 2);
+                console.log("Sending stored speed to popup: " + validStoredSpeed);
+                sendResponse({ speed: validStoredSpeed });
             });
             return true; // Keep the channel open for async response
         }
@@ -128,29 +225,51 @@ function attachVideoMouseEvents() {
     const video = document.querySelector("video");
     if (video && !video.hasMouseEvents) {
         console.log("Attaching mouse events to video element");
-        
+        // Prevent overlay (speedOverlay) from interfering with mouse events on the video
+        if (speedOverlay) {
+            speedOverlay.style.pointerEvents = "none";
+        }
+
         video.addEventListener("mousedown", (event) => {
-            // Check if it's the left mouse button (button 0)
-            if (event.button === 0) {
+            // Ignore events if mouse is over the overlay
+            if (event.button === 0 && !(event.target.id === "speed-overlay")) {
                 console.log("Mouse down on video");
-                enableDoubleSpeed();
+                isDragging = true;
+                startX = event.clientX;
+                startY = event.clientY;
+                currentSpeed = baseSpeed; // Always start from base speed as the anchor point
+                console.log(`Started dragging from anchor point at speed: ${currentSpeed}x (coordinates: ${startX}, ${startY})`);
             }
         });
         
+        video.addEventListener("mousemove", (event) => {
+            handleMouseMovement(event);
+        });
+
         video.addEventListener("mouseup", (event) => {
-            // Check if it's the left mouse button (button 0)
-            if (event.button === 0) {
+            if (event.button === 0 && !(event.target.id === "speed-overlay")) {
                 console.log("Mouse up on video");
-                disableDoubleSpeed();
+                isDragging = false;
+                // Reset to anchor point (base speed) when releasing
+                currentSpeed = baseSpeed;
+                setPlaybackRate(baseSpeed, false);
+                console.log(`Mouse released, returned to anchor point speed: ${baseSpeed}x`);
             }
         });
-        
+
         // Handle mouse leaving the video while button is pressed
-        video.addEventListener("mouseleave", () => {
-            console.log("Mouse left video");
-            disableDoubleSpeed();
+        video.addEventListener("mouseleave", (event) => {
+            // Only trigger if not leaving to the overlay
+            if (!(event.relatedTarget && event.relatedTarget.id === "speed-overlay")) {
+                console.log("Mouse left video");
+                isDragging = false;
+                // Reset to anchor point (base speed) when leaving video area
+                currentSpeed = baseSpeed;
+                setPlaybackRate(baseSpeed, false);
+                console.log(`Mouse left video, returned to anchor point speed: ${baseSpeed}x`);
+            }
         });
-        
+
         video.hasMouseEvents = true;
     }
 }
@@ -163,11 +282,11 @@ document.addEventListener("keydown", (event) => {
         event.preventDefault();
         event.stopPropagation();
 
-        const step = 0.25;
+        const step = 0.5; // Use 0.5 steps for consistency
         if (event.code === "Period") {
             baseSpeed = Math.min(baseSpeed + step, 16);
         } else if (event.code === "Comma") {
-            baseSpeed = Math.max(baseSpeed - step, 0.25);
+            baseSpeed = Math.max(baseSpeed - step, 0.5);
         }
         
         console.log("New base speed calculated: " + baseSpeed);
@@ -178,22 +297,35 @@ document.addEventListener("keydown", (event) => {
             setPlaybackRate(baseSpeed);
         }
     }
-    // Handle space key for double speed
+    // Handle Shift + [1-9] for quick set speeds
+    else if (event.shiftKey && event.code.startsWith("Digit")) {
+        const digit = parseInt(event.code.replace("Digit", ""), 10);
+        if (digit >= 1 && digit <= 9) {
+            baseSpeed = digit;
+            console.log(`Shift+${digit} pressed: Setting speed to ${digit}x`);
+            if (isDoubleSpeed) {
+                setPlaybackRate(baseSpeed * 2, false);
+            } else {
+                setPlaybackRate(baseSpeed);
+            }
+        }
+    }
+    // Handle space key (keeping for compatibility with YouTube's play/pause)
     else if (event.code === "Space") {
         console.log("Space key pressed");
         // Only prevent default if we're not in an input field
-        if (document.activeElement.tagName !== "INPUT" && 
+        if (document.activeElement.tagName !== "INPUT" &&
             document.activeElement.tagName !== "TEXTAREA") {
             // Don't prevent default as this would interfere with YouTube's own play/pause functionality
         }
-        enableDoubleSpeed();
+        // Space key behavior is now handled by mouse movement, keeping for YouTube compatibility
     }
 }, true);
 
 document.addEventListener("keyup", (event) => {
     if (event.code === "Space") {
         console.log("Space key released");
-        disableDoubleSpeed();
+        // Space key behavior is now handled by mouse movement, keeping for YouTube compatibility
     }
 }, true);
 
@@ -206,12 +338,14 @@ setInterval(() => {
             attachVideoMouseEvents();
         }
         
-        // Enforce the desired speed
-        const targetSpeed = isDoubleSpeed ? baseSpeed * 2 : baseSpeed;
-        if (video.playbackRate !== targetSpeed) {
-            video.playbackRate = targetSpeed;
-            console.log("Enforced speed to: " + targetSpeed);
-            showOverlay(targetSpeed);
+        // Enforce the desired speed (only if not currently being controlled by mouse movement)
+        if (!isDragging) {
+            const targetSpeed = baseSpeed;
+            if (video.playbackRate !== targetSpeed) {
+                video.playbackRate = targetSpeed;
+                console.log("Enforced speed to: " + targetSpeed);
+                showOverlay(targetSpeed);
+            }
         }
     }
 }, 500); // Check every 500ms
@@ -223,8 +357,7 @@ document.addEventListener("yt-navigate-finish", () => {
     // Small delay to ensure video element is available
     setTimeout(() => {
         attachVideoMouseEvents();
-        const targetSpeed = isDoubleSpeed ? baseSpeed * 2 : baseSpeed;
-        setPlaybackRate(targetSpeed, false);
+        setPlaybackRate(baseSpeed, false);
     }, 1000);
 });
 
